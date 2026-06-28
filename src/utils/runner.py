@@ -46,6 +46,7 @@ def log_footer(phase_name, start_time, log_file):
 
 
 def load_data(cfg, log_file):
+    import gc
     from src.data.loader import load_split_padded, load_dataset, train_test_split_stratified
 
     start = time.time()
@@ -65,6 +66,8 @@ def load_data(cfg, log_file):
         )
         X_train, y_train, _ = splits["train"]
         X_test, y_test, _ = splits["test"]
+        del splits
+        gc.collect()
     else:
         log(f"Loading data in CLOUD mode...", log_file)
         X, y, _ = load_dataset(cfg["data"]["cloud_data_dir"],
@@ -74,6 +77,8 @@ def load_data(cfg, log_file):
             X, y, test_size=cfg["data"]["test_split"],
             seed=cfg["data"]["random_seed"]
         )
+        del X, y
+        gc.collect()
 
     log(f"Data loaded in {time.time() - start:.1f}s", log_file)
     log(f"  Train: {len(X_train)} | Test: {len(X_test)}", log_file)

@@ -5,6 +5,7 @@ Run: python experiments/phase2_embeddings.py
 
 import os
 import sys
+import gc
 import time
 import numpy as np
 
@@ -44,6 +45,9 @@ def run(cfg):
     emb_test = encoder.encode(X_test, cfg["model"]["batch_size"])
     log(f"  Shape: {emb_test.shape} ({time.time() - t:.1f}s)", log_file)
 
+    del X_train, X_test
+    gc.collect()
+
     os.makedirs("results/metrics", exist_ok=True)
     np.save("results/metrics/emb_train.npy", emb_train)
     np.save("results/metrics/emb_test.npy", emb_test)
@@ -67,6 +71,9 @@ def run(cfg):
 
         log(f"  OA={m['overall_accuracy']:.3f} | F1={m['macro_f1']:.3f} | "
             f"Kappa={m['kappa']:.3f} ({time.time() - t:.1f}s)", log_file)
+
+    del encoder
+    gc.collect()
 
     log_footer("PHASE 2", start_time, log_file)
     return results

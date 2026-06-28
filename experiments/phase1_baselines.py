@@ -5,6 +5,7 @@ Run: python experiments/phase1_baselines.py
 
 import os
 import sys
+import gc
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,6 +45,9 @@ def run(cfg):
         clf = get_classifier(clf_name, cfg["data"]["random_seed"])
         clf.fit(X_tr, y_train)
         y_pred = clf.predict(X_te)
+
+        del X_tr, X_te, clf
+        gc.collect()
 
         labels = sorted(set(y_test))
         m = compute_metrics(y_test, y_pred, labels=labels)

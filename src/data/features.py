@@ -17,15 +17,15 @@ def ndvi_features(X: np.ndarray) -> np.ndarray:
     X: (N, T, C)
     Returns: (N, 4) — [mean, max, min, std] of NDVI time series
     """
-    red = X[:, :, B4_IDX]
-    nir = X[:, :, B8_IDX]
+    red = X[:, :, B4_IDX].astype(np.float32)
+    nir = X[:, :, B8_IDX].astype(np.float32)
     ndvi = (nir - red) / (nir + red + 1e-8)
     return np.stack([
         ndvi.mean(axis=1),
         ndvi.max(axis=1),
         ndvi.min(axis=1),
         ndvi.std(axis=1),
-    ], axis=1)
+    ], axis=1).astype(np.float32)
 
 
 def band_stat_features(X: np.ndarray) -> np.ndarray:
@@ -33,11 +33,12 @@ def band_stat_features(X: np.ndarray) -> np.ndarray:
     X: (N, T, C)
     Returns: (N, C*3) — mean, std, max per band across time
     """
+    X32 = X.astype(np.float32)
     return np.concatenate([
-        X.mean(axis=1),
-        X.std(axis=1),
-        X.max(axis=1),
-    ], axis=1)
+        X32.mean(axis=1),
+        X32.std(axis=1),
+        X32.max(axis=1),
+    ], axis=1).astype(np.float32)
 
 
 def temporal_features(X: np.ndarray) -> np.ndarray:

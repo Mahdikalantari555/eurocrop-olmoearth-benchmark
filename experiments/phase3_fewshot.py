@@ -5,6 +5,7 @@ Run: python experiments/phase3_fewshot.py
 
 import os
 import sys
+import gc
 import time
 import numpy as np
 
@@ -106,6 +107,10 @@ def run(cfg):
             log(f"  RF={results[str(n)]['rf_f1']:.3f} | LGBM={results[str(n)]['lgbm_f1']:.3f} | "
                 f"OLMO={results[str(n)]['olmo_lgbm_f1']:.3f}", log_file)
 
+            del X_train_n, X_train_feat, emb_train_n
+            del shot_splits, clf_rf, clf_lgbm, clf_olmo
+            gc.collect()
+
     else:
         log(f"\nLoading data in CLOUD mode...", log_file)
         X, y, _ = load_dataset(cfg["data"]["cloud_data_dir"],
@@ -168,8 +173,14 @@ def run(cfg):
             log(f"  RF={results[str(n)]['rf_f1']:.3f} | LGBM={results[str(n)]['lgbm_f1']:.3f} | "
                 f"OLMO={results[str(n)]['olmo_lgbm_f1']:.3f} ({time.time() - t:.1f}s)", log_file)
 
+            del emb_fs, clf_rf, clf_lgbm, clf_olmo
+            gc.collect()
+
     save_metrics(results, "results/metrics/phase3_fewshot.json")
     log(f"\nResults saved", log_file)
+
+    del encoder
+    gc.collect()
 
     log_footer("PHASE 3", start_time, log_file)
     return results

@@ -122,6 +122,9 @@ def load_split_zenodo(preprocess_dir: str, split_dir: str, use_case: str,
         results = [r for r in results if r is not None]
         X_list = [r[0] for r in results]
         y_list = [r[1] for r in results]
+        del results
+        import gc
+        gc.collect()
 
         if not X_list:
             splits[split_key] = (np.array([]), np.array([]), [])
@@ -154,6 +157,8 @@ def load_split_padded(preprocess_dir: str, split_dir: str, use_case: str,
         splits = load_split(preprocess_dir, split_dir, use_case, split_name,
                             n_workers, max_samples)
 
+    import gc
+
     result = {}
     for split_key in ["train", "val", "test"]:
         X_list, y, label_names = splits[split_key]
@@ -165,10 +170,13 @@ def load_split_padded(preprocess_dir: str, split_dir: str, use_case: str,
             max_timesteps = max(x.shape[0] for x in X_list)
 
         C = X_list[0].shape[1]
-        X_padded = np.zeros((len(X_list), max_timesteps, C), dtype=np.float32)
+        X_padded = np.zeros((len(X_list), max_timesteps, C), dtype=np.float16)
         for i, x in enumerate(X_list):
             T = min(x.shape[0], max_timesteps)
-            X_padded[i, :T, :] = x[:T, :]
+            X_padded[i, :T, :] = x[:T, :].astype(np.float16)
+
+        del X_list
+        gc.collect()
 
         result[split_key] = (X_padded, y, label_names)
 
