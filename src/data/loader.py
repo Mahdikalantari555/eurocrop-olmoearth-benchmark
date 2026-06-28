@@ -13,6 +13,7 @@ from collections import Counter
 from multiprocessing import Pool
 from functools import partial
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 
 def _load_single_npz(filepath):
@@ -65,8 +66,10 @@ def load_split(preprocess_dir: str, split_dir: str, use_case: str,
         filepaths = [os.path.join(preprocess_dir, fn) for fn in filenames]
         existing = [fp for fp in filepaths if os.path.exists(fp)]
 
+        print(f"  Loading {split_key}: {len(existing)}/{len(filenames)} files")
         with Pool(n_workers) as pool:
-            results = pool.map(_load_single_npz, existing)
+            results = list(tqdm(pool.imap(_load_single_npz, existing),
+                                total=len(existing), desc=f"  {split_key}"))
 
         results = [r for r in results if r is not None]
         X_list = [r[0] for r in results]
@@ -111,8 +114,10 @@ def load_split_zenodo(preprocess_dir: str, split_dir: str, use_case: str,
                 class_label = fn.split("_")[-1].replace(".npz", "")
                 items.append((fp, class_label))
 
+        print(f"  Loading {split_key}: {len(items)}/{len(filenames)} files")
         with Pool(n_workers) as pool:
-            results = pool.map(_load_single_npz_from_dict, items)
+            results = list(tqdm(pool.imap(_load_single_npz_from_dict, items),
+                                total=len(items), desc=f"  {split_key}"))
 
         results = [r for r in results if r is not None]
         X_list = [r[0] for r in results]

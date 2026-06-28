@@ -3,40 +3,29 @@ Phase 2: OLMoEarth embeddings + classifiers.
 Run: python experiments/phase2_embeddings.py
 """
 
-import yaml
 import os
 import sys
+import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.data.loader import (load_split_padded, load_dataset,
-                              train_test_split_stratified)
+from src.utils.runner import load_config, setup_logging, log, log_header, log_footer, load_data
 from src.encoder.olmoearth import OLMoEarthEncoder
 from src.models.classical import get_classifier
-from src.evaluate.metrics import compute_metrics, save_metrics
+from src.evaluate.metrics import compute_metrics, save_metrics, save_confusion_matrix
 
 
 def run(cfg):
-    if cfg["data"]["mode"] == "local":
-        use_zenodo = cfg["data"].get("use_zenodo", False)
-        splits = load_split_padded(
-            cfg["data"]["local_preprocess_dir"],
-            cfg["data"]["local_split_dir"],
-            cfg["data"]["use_case"],
-            split_name="all",
-            use_zenodo=use_zenodo
-        )
-        X_train, y_train, _ = splits["train"]
-        X_test, y_test, _ = splits["test"]
-    else:
-        X, y, _ = load_dataset(cfg["data"]["cloud_data_dir"],
-                                cfg["data"]["cloud_country"],
-                                cfg["data"]["top_n_classes"])
-        X_train, X_test, y_train, y_test = train_test_split_stratified(
-            X, y, test_size=cfg["data"]["test_split"],
-            seed=cfg["data"]["random_seed"]
-        )
+    log_file = setup_logging("phase2", cfg["output"]["metrics_dir"])
+
+    log_header("PHASE 2: OLMoEarth Embeddings + Classifiers", log_file)
+    start_time = time.time()
+
+    X_train, y_train, X_test, y_test = load_data(cfg, log_file)
+
+    log(f"\nInitializing OLMoEarth encoder...", log_file)
+    log(f"  Mode: {cfg['model']['mode']} | Device: {cfg['model']['device']}", log_file)
 
     encoder = OLMoEarthEncoder(
         mode=cfg["model"]["mode"],
@@ -45,26 +34,43 @@ def run(cfg):
         device=cfg["model"]["device"]
     )
 
+    log(f"\nEncoding training set ({len(X_train)} samples)...", log_file)
+    t = time.time()
     emb_train = encoder.encode(X_train, cfg["model"]["batch_size"])
+    log(f"  Shape: {emb_train.shape} ({time.time() - t:.1f}s)", log_file)
+
+    log(f"\nEncoding test set ({len(X_test)} samples)...", log_file)
+    t = time.time()
     emb_test = encoder.encode(X_test, cfg["model"]["batch_size"])
+    log(f"  Shape: {emb_test.shape} ({time.time() - t:.1f}s)", log_file)
 
     os.makedirs("results/metrics", exist_ok=True)
     np.save("results/metrics/emb_train.npy", emb_train)
     np.save("results/metrics/emb_test.npy", emb_test)
+    log(f"Embeddings saved to results/metrics/", log_file)
 
     results = {}
-    for clf_name in ["logreg", "rf", "lgbm", "xgb"]:
+    classifiers = ["logreg", "rf", "lgbm", "xgb"]
+    for i, clf_name in enumerate(classifiers, 1):
+        log(f"\n[{i}/{len(classifiers)}] {clf_name}", log_file)
+        t = time.time()
+
         clf = get_classifier(clf_name)
         clf.fit(emb_train, y_train)
-        m = compute_metrics(y_test, clf.predict(emb_test))
-        save_metrics(m, f"results/metrics/phase2_olmo_{clf_name}.json")
-        results[clf_name] = m
-        print(f"olmo+{clf_name}: OA={m['overall_accuracy']:.3f} | F1={m['macro_f1']:.3f}")
+        y_pred = clf.predict(emb_test)
 
+        labels = sorted(set(y_test))
+        m = compute_metrics(y_test, y_pred, labels=labels)
+        save_metrics(m, f"results/metrics/phase2_olmo_{clf_name}.json")
+        save_confusion_matrix(y_test, y_pred, f"results/metrics/phase2_olmo_{clf_name}_cm.csv", labels=labels)
+        results[clf_name] = m
+
+        log(f"  OA={m['overall_accuracy']:.3f} | F1={m['macro_f1']:.3f} | "
+            f"Kappa={m['kappa']:.3f} ({time.time() - t:.1f}s)", log_file)
+
+    log_footer("PHASE 2", start_time, log_file)
     return results
 
 
 if __name__ == "__main__":
-    with open("config.yaml") as f:
-        cfg = yaml.safe_load(f)
-    run(cfg)
+    run(load_config())

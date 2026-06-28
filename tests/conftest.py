@@ -42,5 +42,9 @@ def sample_metrics():
         "overall_accuracy": 0.85,
         "macro_f1": 0.78,
         "weighted_f1": 0.84,
+        "macro_precision": 0.80,
+        "macro_recall": 0.77,
         "kappa": 0.81,
+        "n_samples": 100,
+        "n_classes": 5,
     }

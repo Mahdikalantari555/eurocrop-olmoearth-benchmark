@@ -22,16 +22,14 @@ class PatchEmbed(nn.Module):
         self.proj = nn.Linear(embed_dim, out_dim)
 
     def forward(self, x):
-        # x: (B, T, C) or (B, T, C, H, W)
         if x.dim() == 5:
             B, T, C, H, W = x.shape
-            x = x.squeeze(-1).squeeze(-1)  # (B, T, C)
+            x = x.squeeze(-1).squeeze(-1)
         x = self.pixel_proj(x)
-        # Pad to embed_dim for projection
         if x.shape[-1] < 768:
             pad = torch.zeros(*x.shape[:-1], 768 - x.shape[-1], device=x.device)
             x = torch.cat([x, pad], dim=-1)
-        x = self.proj(x)  # (B, T, out_dim)
+        x = self.proj(x)
         return x
 
 
@@ -92,17 +90,9 @@ class OlmoEarthEncoder(nn.Module):
         )
 
     def forward(self, x, modality="sentinel2_l2a"):
-        """
-        Args:
-            x: (B, T, C) tensor — C=13 for S2 L1C (B01-B12 + B8A)
-            modality: which patch embedding to use
-        Returns:
-            embeddings: (B, D) tensor
-        """
         if modality not in self.patch_embeddings:
             modality = list(self.patch_embeddings.keys())[0]
 
-        # Model trained with 12 bands; drop B8A (index 8) if input has 13
         if x.shape[-1] == 13:
             x = torch.cat([x[:, :, :8], x[:, :, 9:]], dim=-1)
 
@@ -113,15 +103,12 @@ class OlmoEarthEncoder(nn.Module):
             h = block(h)
 
         h = self.norm(h)
-        h = h.mean(dim=1)  # (B, D) — average pool over time
+        h = h.mean(dim=1)
         h = self.project_and_aggregate(h)
         return h
 
     @staticmethod
     def from_state_dict(weights_path: str, device: str = "cpu"):
-        """
-        Load encoder from local weights.pth, extracting only encoder keys.
-        """
         state_dict = torch.load(weights_path, map_location=device)
 
         enc_keys = {k: v for k, v in state_dict.items()
@@ -144,6 +131,9 @@ class OLMoEarthEncoder:
     """Wrapper supporting both local and cloud modes."""
     def __init__(self, mode="local", local_weights_path=None,
                  cloud_model_id=None, device="cpu"):
+        if device == "cuda" and not torch.cuda.is_available():
+            print("[OLMoEarth] CUDA not available, falling back to CPU")
+            device = "cpu"
         self.device = device
         self.mode = mode
 
@@ -152,25 +142,25 @@ class OLMoEarthEncoder:
                 local_weights_path, device
             )
         else:
-            # Cloud mode: download weights.pth from HuggingFace
             from huggingface_hub import hf_hub_download
             weights_path = hf_hub_download(cloud_model_id, "weights.pth")
             self.model = OlmoEarthEncoder.from_state_dict(
                 weights_path, device
             )
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def encode(self, X: np.ndarray, batch_size: int = 32) -> np.ndarray:
-        """
-        X: (N, T, C) — N parcels
-        Returns: (N, D) embeddings
-        """
         all_embeddings = []
+        use_amp = self.device == "cuda"
 
         for i in tqdm(range(0, len(X), batch_size), desc="Encoding"):
             batch = X[i:i + batch_size]
             tensor = torch.tensor(batch, dtype=torch.float32).to(self.device)
-            output = self.model(tensor)
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    output = self.model(tensor)
+            else:
+                output = self.model(tensor)
             all_embeddings.append(output.cpu().numpy())
 
         return np.concatenate(all_embeddings, axis=0)
