@@ -19,12 +19,14 @@ def run(cfg):
     emb_test = np.load("results/metrics/emb_test.npy")
 
     if cfg["data"]["mode"] == "local":
+        use_zenodo = cfg["data"].get("use_zenodo", False)
         from src.data.loader import load_split_padded
         splits = load_split_padded(
             cfg["data"]["local_preprocess_dir"],
             cfg["data"]["local_split_dir"],
             cfg["data"]["use_case"],
-            split_name="all"
+            split_name="all",
+            use_zenodo=use_zenodo
         )
         _, y_train, _ = splits["train"]
         _, y_test, _ = splits["test"]

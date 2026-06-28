@@ -22,11 +22,13 @@ def run(cfg):
     repeats = cfg["fewshot"]["n_repeats"]
 
     if cfg["data"]["mode"] == "local":
+        use_zenodo = cfg["data"].get("use_zenodo", False)
         preprocess_dir = cfg["data"]["local_preprocess_dir"]
         split_dir = cfg["data"]["local_split_dir"]
         use_case = cfg["data"]["use_case"]
 
-        base_splits = load_split_padded(preprocess_dir, split_dir, use_case, "all")
+        base_splits = load_split_padded(preprocess_dir, split_dir, use_case, "all",
+                                         use_zenodo=use_zenodo)
         X_test, y_test, _ = base_splits["test"]
 
         X_test_feat = band_stat_features(np.array(X_test, dtype=np.float32))
@@ -42,7 +44,8 @@ def run(cfg):
         results = {}
         for n in shots:
             shot_splits = load_split_padded(
-                preprocess_dir, split_dir, use_case, str(n)
+                preprocess_dir, split_dir, use_case, str(n),
+                use_zenodo=use_zenodo
             )
             X_train_n, y_train_n, _ = shot_splits["train"]
             X_train_n = np.array(X_train_n, dtype=np.float32)

@@ -3,7 +3,7 @@ EuroCropML data loader.
 
 Supports two modes:
 - local: loads pre-processed .npz files using split JSONs (parallel loading)
-- cloud: uses eurocropsml library to download and load data
+- cloud: loads from Zenodo downloaded data (preprocess + split directories)
 """
 
 import os
@@ -22,6 +22,17 @@ def _load_single_npz(filepath):
         npz = np.load(filepath, allow_pickle=True)
         data = npz["data"]
         class_label = fname.split("_")[-1].replace(".npz", "")
+        return data, class_label
+    except Exception:
+        return None
+
+
+def _load_single_npz_from_dict(item):
+    """Load a single .npz file from a dict item. Returns (data_array, class_label) or None."""
+    filepath, class_label = item
+    try:
+        npz = np.load(filepath, allow_pickle=True)
+        data = npz["data"]
         return data, class_label
     except Exception:
         return None
@@ -70,17 +81,73 @@ def load_split(preprocess_dir: str, split_dir: str, use_case: str,
     return splits
 
 
+def load_split_zenodo(preprocess_dir: str, split_dir: str, use_case: str,
+                      split_name: str = "all", n_workers: int = 8,
+                      max_samples: int = None):
+    """
+    Load data from Zenodo structure: preprocess/*.npz + split/<use_case>/*.json
+    Handles flat preprocess directory with files named: <NUTS3>_<parcelID>_<hcat>.npz
+    """
+    if split_name == "all":
+        split_file = os.path.join(split_dir, use_case, "finetune",
+                                  "region_split_all.json")
+    else:
+        split_file = os.path.join(split_dir, use_case, "finetune",
+                                  f"region_split_{split_name}.json")
+
+    with open(split_file) as f:
+        split_data = json.load(f)
+
+    splits = {}
+    for split_key in ["train", "val", "test"]:
+        filenames = split_data[split_key]
+        if max_samples is not None:
+            filenames = filenames[:max_samples]
+
+        items = []
+        for fn in filenames:
+            fp = os.path.join(preprocess_dir, fn)
+            if os.path.exists(fp):
+                class_label = fn.split("_")[-1].replace(".npz", "")
+                items.append((fp, class_label))
+
+        with Pool(n_workers) as pool:
+            results = pool.map(_load_single_npz_from_dict, items)
+
+        results = [r for r in results if r is not None]
+        X_list = [r[0] for r in results]
+        y_list = [r[1] for r in results]
+
+        if not X_list:
+            splits[split_key] = (np.array([]), np.array([]), [])
+            continue
+
+        unique_labels = sorted(set(y_list))
+        label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
+        y_mapped = np.array([label_map[yl] for yl in y_list], dtype=np.int64)
+
+        splits[split_key] = (X_list, y_mapped, unique_labels)
+
+    return splits
+
+
 def load_split_padded(preprocess_dir: str, split_dir: str, use_case: str,
                       split_name: str = "all", max_timesteps: int = None,
-                      n_workers: int = 8, max_samples: int = None):
+                      n_workers: int = 8, max_samples: int = None,
+                      use_zenodo: bool = False):
     """
     Load data with padding to fixed timestep dimension.
 
     Args:
         max_samples: if set, limit each split to this many samples
+        use_zenodo: if True, use Zenodo flat directory structure
     """
-    splits = load_split(preprocess_dir, split_dir, use_case, split_name,
-                        n_workers, max_samples)
+    if use_zenodo:
+        splits = load_split_zenodo(preprocess_dir, split_dir, use_case,
+                                   split_name, n_workers, max_samples)
+    else:
+        splits = load_split(preprocess_dir, split_dir, use_case, split_name,
+                            n_workers, max_samples)
 
     result = {}
     for split_key in ["train", "val", "test"]:
@@ -105,7 +172,8 @@ def load_split_padded(preprocess_dir: str, split_dir: str, use_case: str,
 
 def load_split_padded_cached(preprocess_dir: str, split_dir: str, use_case: str,
                               split_name: str = "all", max_timesteps: int = None,
-                              n_workers: int = 8, cache_dir: str = None):
+                              n_workers: int = 8, cache_dir: str = None,
+                              use_zenodo: bool = False):
     """
     Load with caching to .npz to avoid re-reading 100K+ files.
     """
@@ -129,7 +197,8 @@ def load_split_padded_cached(preprocess_dir: str, split_dir: str, use_case: str,
         }
 
     splits = load_split_padded(preprocess_dir, split_dir, use_case,
-                                split_name, max_timesteps, n_workers)
+                                split_name, max_timesteps, n_workers,
+                                use_zenodo=use_zenodo)
 
     os.makedirs(cache_dir, exist_ok=True)
     np.savez(cache_file,

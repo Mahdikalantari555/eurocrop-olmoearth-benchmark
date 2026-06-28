@@ -19,11 +19,13 @@ from src.evaluate.metrics import compute_metrics, save_metrics
 
 def run(cfg):
     if cfg["data"]["mode"] == "local":
+        use_zenodo = cfg["data"].get("use_zenodo", False)
         splits = load_split_padded(
             cfg["data"]["local_preprocess_dir"],
             cfg["data"]["local_split_dir"],
             cfg["data"]["use_case"],
-            split_name="all"
+            split_name="all",
+            use_zenodo=use_zenodo
         )
         X_train, y_train, _ = splits["train"]
         X_test, y_test, _ = splits["test"]
