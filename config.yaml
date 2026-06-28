@@ -1,0 +1,25 @@
+data:
+  mode: "local"                    # "local" | "cloud"
+  local_preprocess_dir: "E:/RSGIS/OlmoEarth/Project/Data/preprocess/preprocess"
+  local_split_dir: "E:/RSGIS/OlmoEarth/Project/Data/split/split"
+  use_case: "overlap_latvia_vs_estonia"
+  cloud_data_dir: "./data"
+  cloud_country: "Estonia"
+  top_n_classes: 15
+  test_split: 0.2
+  random_seed: 42
+
+model:
+  mode: "local"                    # "local" | "cloud" (auto-downloads from HF)
+  local_weights_path: "E:/RSGIS/OlmoEarth/Project/Models/V1.1_Nano/weights.pth"
+  cloud_model_id: "allenai/OlmoEarth-v1_1-Nano"
+  batch_size: 32
+  device: "cuda"
+
+fewshot:
+  shots: [5, 10, 20, 100, 200, 500]
+  n_repeats: 5
+
+output:
+  metrics_dir: "./results/metrics"
+  figures_dir: "./results/figures"

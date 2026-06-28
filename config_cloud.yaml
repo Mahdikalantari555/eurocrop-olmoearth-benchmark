@@ -1,0 +1,25 @@
+data:
+  mode: "cloud"
+  local_preprocess_dir: ""
+  local_split_dir: ""
+  use_case: "overlap_latvia_vs_estonia"
+  cloud_data_dir: "./data"
+  cloud_country: "Estonia"
+  top_n_classes: 15
+  test_split: 0.2
+  random_seed: 42
+
+model:
+  mode: "cloud"
+  local_weights_path: ""
+  cloud_model_id: "allenai/OlmoEarth-v1_1-Nano"
+  batch_size: 32
+  device: "cuda"
+
+fewshot:
+  shots: [10, 25, 50, 100]
+  n_repeats: 5
+
+output:
+  metrics_dir: "./results/metrics"
+  figures_dir: "./results/figures"

@@ -1,0 +1,13 @@
+eurocropsml
+torch
+transformers
+scikit-learn
+lightgbm
+xgboost
+umap-learn
+matplotlib
+seaborn
+numpy
+pandas
+pyyaml
+tqdm
