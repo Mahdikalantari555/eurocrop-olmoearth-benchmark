@@ -72,3 +72,110 @@ def temporal_features(X: np.ndarray) -> np.ndarray:
     features[:, C:] = variances[:, np.newaxis]
 
     return features.astype(np.float32)
+
+
+def mean_ndvi(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — mean NDVI across time
+    """
+    red = X[:, :, B4_IDX].astype(np.float32)
+    nir = X[:, :, B8_IDX].astype(np.float32)
+    ndvi = (nir - red) / (nir + red + 1e-8)
+    return ndvi.mean(axis=1, keepdims=True).astype(np.float32)
+
+
+def std_ndvi(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — standard deviation of NDVI across time
+    """
+    red = X[:, :, B4_IDX].astype(np.float32)
+    nir = X[:, :, B8_IDX].astype(np.float32)
+    ndvi = (nir - red) / (nir + red + 1e-8)
+    return ndvi.std(axis=1, keepdims=True).astype(np.float32)
+
+
+def mean_red(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — mean Red band (B04) across time
+    """
+    red = X[:, :, B4_IDX].astype(np.float32)
+    return red.mean(axis=1, keepdims=True).astype(np.float32)
+
+
+def mean_nir(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — mean NIR band (B08) across time
+    """
+    nir = X[:, :, B8_IDX].astype(np.float32)
+    return nir.mean(axis=1, keepdims=True).astype(np.float32)
+
+
+def mean_green(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — mean Green band (B03) across time
+    """
+    B3_IDX = S2_BANDS.index("B03")
+    green = X[:, :, B3_IDX].astype(np.float32)
+    return green.mean(axis=1, keepdims=True).astype(np.float32)
+
+
+def mean_blue(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 1) — mean Blue band (B02) across time
+    """
+    B2_IDX = S2_BANDS.index("B02")
+    blue = X[:, :, B2_IDX].astype(np.float32)
+    return blue.mean(axis=1, keepdims=True).astype(np.float32)
+
+
+def spectral_statistics(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, C*4) — mean, std, min, max per band across time
+    """
+    X32 = X.astype(np.float32)
+    return np.concatenate([
+        X32.mean(axis=1),
+        X32.std(axis=1),
+        X32.min(axis=1),
+        X32.max(axis=1),
+    ], axis=1).astype(np.float32)
+
+
+def ndvi_percentiles(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, 4) — 25th, 50th, 75th, 90th percentiles of NDVI
+    """
+    red = X[:, :, B4_IDX].astype(np.float32)
+    nir = X[:, :, B8_IDX].astype(np.float32)
+    ndvi = (nir - red) / (nir + red + 1e-8)
+    return np.stack([
+        np.percentile(ndvi, 25, axis=1),
+        np.percentile(ndvi, 50, axis=1),
+        np.percentile(ndvi, 75, axis=1),
+        np.percentile(ndvi, 90, axis=1),
+    ], axis=1).astype(np.float32)
+
+
+def combined_baseline_features(X: np.ndarray) -> np.ndarray:
+    """
+    X: (N, T, C)
+    Returns: (N, feature_dim) — combined baseline features
+    """
+    return np.concatenate([
+        ndvi_features(X),
+        mean_ndvi(X),
+        std_ndvi(X),
+        mean_red(X),
+        mean_nir(X),
+        mean_green(X),
+        mean_blue(X),
+        ndvi_percentiles(X),
+    ], axis=1).astype(np.float32)

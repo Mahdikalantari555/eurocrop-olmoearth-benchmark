@@ -1,6 +1,34 @@
-# EuroCropML × OLMoEarth Benchmark
+# EuroCropML × OLMoEarth Benchmark v2.0
 
-Benchmark comparing classical ML with OLMoEarth foundation model embeddings for crop type classification.
+A lightweight and reproducible benchmark pipeline for evaluating OLMoEarth embeddings on EuroCropsML without loading the entire dataset into memory.
+
+## Pipeline Phases
+
+| Phase | Description | Module |
+|-------|-------------|--------|
+| 1 | Dataset Inspection | `src/data/inspect.py` |
+| 2 | Memory Profiling | `src/data/memory_profiler.py` |
+| 3 | Streaming Data Loader | `src/data/streaming.py` |
+| 4 | Embedding Extraction | `src/encoder/olmoearth.py` |
+| 5 | Baseline Features | `src/data/features.py` |
+| 6 | Classification Experiments | `experiments/run_classification.py` |
+| 7 | Scaling Evaluation | `src/data/scaling.py` |
+
+## Quick Start
+
+```bash
+# End-to-end pipeline test (60 samples, ~5 seconds)
+python test_e2e.py
+
+# Embedding pipeline test (60 samples, ~10 seconds)
+python test_embedding_e2e.py
+
+# Full benchmark notebook (local)
+jupyter notebook benchmark.ipynb
+
+# Colab benchmark (4 models: Nano, Tiny, Base, Large)
+# Upload benchmark_colab.ipynb to Colab and run all cells
+```
 
 ## Architecture
 
@@ -208,13 +236,138 @@ plot_fewshot_curve(results_dict, save_path="results/figures/fewshot.png")
 plot_umap(embeddings, labels, save_path="results/figures/umap.png")
 ```
 
+### `src/data/inspect.py`
+
+Dataset inspection utilities (Phase 1).
+
+```python
+from src.data.inspect import (
+    inspect_directory_structure, count_samples, count_classes,
+    generate_class_distribution, get_top_classes, create_reduced_subset,
+    print_inspection_report
+)
+
+# Print full inspection report
+print_inspection_report("Data/preprocess/preprocess", "Data/split/split", "overlap_latvia_vs_estonia")
+
+# Get top 20 classes
+top_classes = get_top_classes("Data/preprocess/preprocess", n=20)
+
+# Create reduced subset
+create_reduced_subset("Data/preprocess/preprocess", "Data/preprocess_subset", top_n=20)
+```
+
+### `src/data/memory_profiler.py`
+
+Memory profiling utilities (Phase 2).
+
+```python
+from src.data.memory_profiler import (
+    get_memory_usage, measure_single_npz, measure_batch_loading,
+    identify_memory_bottlenecks, print_memory_report
+)
+
+# Print full memory report
+print_memory_report("Data/preprocess/preprocess", n_samples=100)
+
+# Measure single file
+result = measure_single_npz("path/to/file.npz")
+print(f"Memory delta: {result['memory_delta_mb']} MB")
+```
+
+### `src/data/streaming.py`
+
+Memory-efficient streaming data loader (Phase 3).
+
+```python
+from src.data.streaming import (
+    StreamingDataset, StreamingSplitDataset,
+    create_batch_generator, create_split_batch_generator
+)
+
+# Stream from directory
+dataset = StreamingDataset("Data/preprocess/preprocess", batch_size=32)
+for X_batch, y_batch in dataset:
+    # Process batch - never loads all files at once
+    pass
+
+# Stream from split
+dataset = StreamingSplitDataset(
+    "Data/preprocess/preprocess", "Data/split/split",
+    "overlap_latvia_vs_estonia", batch_size=32, split_key="train"
+)
+for X_batch, y_batch in dataset:
+    pass
+```
+
+### `src/data/features.py`
+
+Expanded baseline feature extraction (Phase 5).
+
+```python
+from src.data.features import (
+    ndvi_features, band_stat_features, spectral_statistics,
+    combined_baseline_features, mean_ndvi, std_ndvi,
+    mean_red, mean_nir, mean_green, mean_blue, ndvi_percentiles
+)
+
+# Combined features (recommended)
+features = combined_baseline_features(X)  # (N, 14)
+
+# Individual features
+ndvi = ndvi_features(X)           # (N, 4)
+band_stats = band_stat_features(X) # (N, 39)
+spectral = spectral_statistics(X)  # (N, 52)
+```
+
+### `src/data/scaling.py`
+
+Scaling evaluation utilities (Phase 7).
+
+```python
+from src.data.scaling import evaluate_scalability, print_scaling_report
+
+# Run full scalability evaluation
+results = evaluate_scalability("Data/preprocess/preprocess")
+print_scaling_report(results)
+```
+
+### `experiments/run_classification.py`
+
+Classification experiments runner (Phase 6).
+
+```bash
+# Run all experiments (A, B, C, D)
+python experiments/run_classification.py --config config.yaml
+
+# Run specific experiment
+python experiments/run_classification.py --config config.yaml --experiment A
+python experiments/run_classification.py --config config.yaml --experiment B
+```
+
+Experiments:
+- **A**: Handcrafted features (NDVI, band stats, combined) + Logistic Regression/LightGBM
+- **B**: OLMoEarth embeddings + Logistic Regression
+- **C**: OLMoEarth embeddings + LightGBM
+- **D**: Concatenated embeddings + features + LightGBM
+
 ## Experiments
+
+### Current (v2.0)
+
+| Script | Description |
+|--------|-------------|
+| `experiments/run_classification.py` | Classification experiments (A/B/C/D matrix) |
+
+### Archive (v1.0)
+
+Previous experiments archived in `archive/experiments/`:
 
 | Script | Description |
 |--------|-------------|
 | `phase1_baselines.py` | RF/LightGBM/XGBoost on NDVI and band statistics features |
-| `phase2_embeddings.py` | OLMoEarth embeddings + classifiers (caches embeddings to .npy) |
-| `phase3_fewshot.py` | Few-shot comparison using pre-defined splits (5-500 shots) |
+| `phase2_embeddings.py` | OLMoEarth embeddings + classifiers |
+| `phase3_fewshot.py` | Few-shot comparison using pre-defined splits |
 | `phase4_linear_probe.py` | Linear probe on pre-computed embeddings |
 
 ## Config
@@ -253,21 +406,27 @@ E:\Programs\conda\envs\geospatial\python.exe -m pytest tests/ -v
 
 ## Google Colab
 
-```python
-# 1. Clone repo
-!git clone https://github.com/YOUR_USERNAME/eurocrop-olmoearth-benchmark.git
-%cd eurocrop-olmoearth-benchmark
+Upload `benchmark_colab.ipynb` to Google Colab and run all cells.
 
-# 2. Install deps
-!pip install -r requirements.txt huggingface_hub -q
+The notebook will:
+1. Clone this repo and install dependencies
+2. Download EuroCropsML data from HuggingFace (`mahdi555/eurocrop-data`)
+3. Download OLMoEarth models from HuggingFace (`allenai/OlmoEarth-v1_1-{Nano,Tiny,Base,Large}`)
+4. Extract embeddings and run classification experiments
+5. Generate comparison table and visualizations
 
-# 3. Download data
-!eurocropsml download --country Estonia --output-dir ./data
+**Models compared:**
 
-# 4. Run experiments (weights auto-download from HuggingFace)
-!python experiments/phase1_baselines.py
-!python experiments/phase2_embeddings.py
-!python experiments/phase3_fewshot.py
-```
+| Model | HF Repo | Parameters |
+|-------|---------|------------|
+| Nano | `allenai/OlmoEarth-v1_1-Nano` | ~12M |
+| Tiny | `allenai/OlmoEarth-v1_1-Tiny` | ~30M |
+| Base | `allenai/OlmoEarth-v1_1-Base` | ~100M |
+| Large | `allenai/OlmoEarth-v1_1-Large` | ~300M |
 
-Or use the pre-built notebook: `notebooks/99_colab_runner.ipynb`
+**Experiments per model:**
+- Embeddings + LogisticRegression
+- Embeddings + LightGBM
+- Hybrid (features + embeddings) + LightGBM
+
+Plus baseline (features + LightGBM) for comparison.

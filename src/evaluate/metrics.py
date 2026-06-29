@@ -42,6 +42,11 @@ def save_metrics(metrics: dict, path: str):
 def save_confusion_matrix(y_true, y_pred, path, labels=None):
     """Save confusion matrix as CSV."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if labels is not None:
+        label_set = set(y_true) | set(y_pred)
+        labels = [l for l in labels if l in label_set]
+        if not labels:
+            labels = None
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     np.savetxt(path, cm, delimiter=",", fmt="%d")
 

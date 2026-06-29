@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
+from typing import Dict
 
 
 class PatchEmbed(nn.Module):
@@ -164,3 +165,116 @@ class OLMoEarthEncoder:
             all_embeddings.append(output.cpu().numpy())
 
         return np.concatenate(all_embeddings, axis=0)
+
+    @torch.inference_mode()
+    def encode_batch(self, X: np.ndarray, batch_size: int = 32) -> np.ndarray:
+        """Encode a single batch and return embeddings."""
+        use_amp = self.device == "cuda"
+        all_embeddings = []
+        
+        for i in range(0, len(X), batch_size):
+            batch = X[i:i + batch_size]
+            tensor = torch.tensor(batch, dtype=torch.float32).to(self.device)
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    output = self.model(tensor)
+            else:
+                output = self.model(tensor)
+            all_embeddings.append(output.cpu().numpy())
+        
+        return np.concatenate(all_embeddings, axis=0)
+
+    def encode_streaming(self, data_generator, output_dir: str,
+                         batch_size: int = 32,
+                         save_every: int = 10) -> Dict:
+        """
+        Encode data from a generator and save incrementally.
+        
+        Args:
+            data_generator: Generator yielding (X_batch, y_batch)
+            output_dir: Directory to save embeddings
+            batch_size: Batch size for encoding
+            save_every: Save checkpoint every N batches
+            
+        Returns:
+            Dictionary with encoding statistics
+        """
+        import os
+        import json
+        import gc
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        all_embeddings = []
+        all_labels = []
+        total_samples = 0
+        batch_count = 0
+        
+        for X_batch, y_batch in tqdm(data_generator, desc="Encoding streaming"):
+            embeddings = self.encode_batch(X_batch, batch_size)
+            all_embeddings.append(embeddings)
+            all_labels.append(y_batch)
+            total_samples += len(y_batch)
+            batch_count += 1
+            
+            if batch_count % save_every == 0:
+                self._save_checkpoint(all_embeddings, all_labels, 
+                                     output_dir, total_samples)
+                all_embeddings = []
+                all_labels = []
+                gc.collect()
+        
+        if all_embeddings:
+            self._save_checkpoint(all_embeddings, all_labels, 
+                                 output_dir, total_samples)
+        
+        self._save_final(output_dir, total_samples)
+        
+        return {
+            "total_samples": total_samples,
+            "output_dir": output_dir,
+            "embedding_dim": self.model.dim
+        }
+    
+    def _save_checkpoint(self, embeddings_list, labels_list, 
+                         output_dir: str, total_samples: int):
+        """Save intermediate checkpoint."""
+        import numpy as np
+        import os
+        
+        embeddings = np.concatenate(embeddings_list, axis=0)
+        labels = np.concatenate(labels_list, axis=0)
+        
+        checkpoint_path = os.path.join(output_dir, f"checkpoint_{total_samples}.npz")
+        np.savez(checkpoint_path, embeddings=embeddings, labels=labels)
+    
+    def _save_final(self, output_dir: str, total_samples: int):
+        """Merge checkpoints into final embeddings."""
+        import numpy as np
+        import os
+        import glob
+        
+        checkpoint_files = sorted(glob.glob(os.path.join(output_dir, "checkpoint_*.npz")))
+        
+        if not checkpoint_files:
+            return
+        
+        all_embeddings = []
+        all_labels = []
+        
+        for cf in checkpoint_files:
+            data = np.load(cf)
+            all_embeddings.append(data['embeddings'])
+            all_labels.append(data['labels'])
+            os.remove(cf)
+        
+        embeddings = np.concatenate(all_embeddings, axis=0)
+        labels = np.concatenate(all_labels, axis=0)
+        
+        np.save(os.path.join(output_dir, "embeddings.npy"), embeddings)
+        np.save(os.path.join(output_dir, "labels.npy"), labels)
+        
+        np.savez(os.path.join(output_dir, "metadata.npz"),
+                 embedding_dim=embeddings.shape[1],
+                 n_samples=embeddings.shape[0],
+                 n_classes=len(np.unique(labels)))
