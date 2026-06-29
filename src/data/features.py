@@ -179,3 +179,130 @@ def combined_baseline_features(X: np.ndarray) -> np.ndarray:
         mean_blue(X),
         ndvi_percentiles(X),
     ], axis=1).astype(np.float32)
+
+
+def stream_and_save_features(data_dir, split_dir, use_case, split_key,
+                             output_path, top_n_classes=None,
+                             batch_size=256, n_workers=4):
+    """
+    Stream data from disk, extract features per batch, save incrementally.
+    Never loads full (N, T, C) into memory.
+
+    Args:
+        data_dir: Path to preprocess directory
+        split_dir: Path to split directory
+        use_case: Use case name
+        split_key: "train", "val", or "test"
+        output_path: Path to save .npz file
+        top_n_classes: Optional filter to top-N classes
+        batch_size: Samples per batch
+        n_workers: Number of parallel workers for I/O
+    """
+    import os
+    import gc
+    import json
+    import time
+    import numpy as np
+    from collections import Counter
+
+    t_start = time.time()
+
+    # Step 1: Get class filter
+    print(f"  [1/4] Scanning classes...", end=" ", flush=True)
+    class_counter = Counter()
+    for f in os.listdir(data_dir):
+        if f.endswith(".npz"):
+            cls = f.split("_")[-1].replace(".npz", "")
+            class_counter[cls] += 1
+    print(f"{len(class_counter)} classes found ({time.time()-t_start:.1f}s)")
+
+    class_filter = None
+    label_map = None
+    if top_n_classes:
+        top_classes = [c for c, _ in class_counter.most_common(top_n_classes)]
+        class_filter = set(top_classes)
+        label_map = {c: i for i, c in enumerate(sorted(top_classes))}
+        print(f"  Filtered to {len(class_filter)} classes: {top_classes[:5]}...")
+
+    # Step 2: Read split file and filter filenames
+    print(f"  [2/4] Reading split file...", end=" ", flush=True)
+    split_file = os.path.join(split_dir, use_case, "finetune", "region_split_all.json")
+    with open(split_file) as f:
+        split_data = json.load(f)
+    filenames = split_data[split_key]
+
+    if class_filter:
+        filenames = [fn for fn in filenames
+                     if fn.split("_")[-1].replace(".npz", "") in class_filter]
+    print(f"{len(filenames)} files to process ({time.time()-t_start:.1f}s)")
+
+    # Step 3: Load and extract features in batches
+    print(f"  [3/4] Extracting features (batch_size={batch_size})...")
+
+    all_feats = []
+    all_labels = []
+    processed = 0
+    batch_count = 0
+
+    for i in range(0, len(filenames), batch_size):
+        batch_files = filenames[i:i + batch_size]
+        batch_X = []
+        batch_y = []
+
+        for fn in batch_files:
+            filepath = os.path.join(data_dir, fn)
+            try:
+                data = np.load(filepath, allow_pickle=True)
+                X = data["data"]
+                cls_label = fn.split("_")[-1].replace(".npz", "")
+                batch_X.append(X)
+                batch_y.append(cls_label)
+            except Exception:
+                continue
+
+        if batch_X:
+            feat = _extract_batch_features(batch_X)
+            all_feats.append(feat)
+
+            if label_map is not None:
+                y_encoded = np.array([label_map[c] for c in batch_y], dtype=np.int64)
+            else:
+                y_encoded = np.array(list(range(len(batch_y))), dtype=np.int64)
+            all_labels.append(y_encoded)
+
+            processed += len(batch_X)
+            batch_count += 1
+
+            if batch_count % 10 == 0:
+                print(f"    Batch {batch_count}: {processed} files ({time.time()-t_start:.1f}s)")
+
+        del batch_X, batch_y
+        gc.collect()
+
+    # Step 4: Save
+    print(f"  [4/4] Saving...", end=" ", flush=True)
+    if all_feats:
+        X_feats = np.concatenate(all_feats, axis=0)
+        y_labels = np.concatenate(all_labels, axis=0)
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        np.savez(output_path, X=X_feats, y=y_labels)
+        elapsed = time.time() - t_start
+        print(f"{output_path} | shape={X_feats.shape} ({elapsed:.1f}s)")
+    else:
+        print("Warning: No data processed")
+
+    return {"output_path": output_path, "processed": processed}
+
+
+def _extract_batch_features(batch_X):
+    """Extract features from a batch of variable-length sequences."""
+    import numpy as np
+
+    max_T = max(x.shape[0] for x in batch_X)
+    C = batch_X[0].shape[1]
+    X_padded = np.zeros((len(batch_X), max_T, C), dtype=np.float32)
+    for i, x in enumerate(batch_X):
+        T = min(x.shape[0], max_T)
+        X_padded[i, :T, :] = x[:T, :]
+
+    return combined_baseline_features(X_padded)

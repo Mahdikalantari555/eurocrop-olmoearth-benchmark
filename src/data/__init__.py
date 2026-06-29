@@ -1,14 +1,24 @@
 """
-EuroCropsML data loading and processing modules.
+EuroCropsML / EuroSAT data loading and processing modules.
 
 Modules:
-    loader: Traditional data loading with parallel I/O
-    streaming: Memory-efficient streaming data loader
+    io: Multi-format data I/O (NPZ, TIF, NPY, PNG, HDF5)
+    loader: Traditional data loading with parallel I/O (NPZ only)
+    streaming: Memory-efficient streaming data loader (NPZ only)
     features: Classical feature extraction
     inspect: Dataset inspection utilities
     memory_profiler: Memory profiling utilities
     scaling: Scaling evaluation utilities
 """
+
+from .io import (
+    load_sample,
+    detect_format,
+    stream_files,
+    stream_from_split_generic,
+    get_class_counts,
+    get_top_classes as get_top_classes_generic,
+)
 
 from .loader import (
     load_split,
@@ -41,7 +51,8 @@ from .features import (
     mean_blue,
     spectral_statistics,
     ndvi_percentiles,
-    combined_baseline_features
+    combined_baseline_features,
+    stream_and_save_features,
 )
 
 from .inspect import (

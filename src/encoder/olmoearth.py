@@ -128,6 +128,50 @@ class OlmoEarthEncoder(nn.Module):
         return model
 
 
+def prepare_for_encoder(X: np.ndarray) -> np.ndarray:
+    """
+    Reshape data for OLMoEarth encoder input (B, T, C).
+
+    Handles:
+    - (N, T, C) -> already correct, return as-is
+    - (N, C, H, W) -> reshape to (N, H*W, C) treating pixels as timesteps
+    - (N, H, W, C) -> reshape to (N, H*W, C)
+    - (N, C) -> reshape to (N, 1, C) adding dummy timestep
+
+    Args:
+        X: Input array with shape (N, ...) 
+
+    Returns:
+        Array with shape (N, T, C) ready for encoder
+    """
+    if X.ndim == 3:
+        # Could be (N, T, C) or (N, C, H, W) or (N, H, W, C)
+        # Heuristic: if last dim == 13 (Sentinel-2), it's likely (N, T, C)
+        if X.shape[-1] == 13 or X.shape[-1] == 12:
+            return X  # Already (N, T, C)
+        # Otherwise assume (N, C, H, W) -> (N, H*W, C)
+        N, C, H, W = X.shape
+        return X.transpose(0, 2, 3, 1).reshape(N, H * W, C)
+
+    elif X.ndim == 4:
+        # (N, C, H, W) or (N, H, W, C) or (N, T, C, extra)
+        if X.shape[1] <= X.shape[2] and X.shape[1] <= X.shape[3]:
+            # Likely (N, C, H, W) -> (N, H*W, C)
+            N, C, H, W = X.shape
+            return X.transpose(0, 2, 3, 1).reshape(N, H * W, C)
+        else:
+            # Likely (N, H, W, C) -> (N, H*W, C)
+            N, H, W, C = X.shape
+            return X.reshape(N, H * W, C)
+
+    elif X.ndim == 2:
+        # (N, C) -> (N, 1, C)
+        return X[:, np.newaxis, :]
+
+    else:
+        raise ValueError(f"Cannot reshape {X.shape} for encoder")
+
+
 class OLMoEarthEncoder:
     """Wrapper supporting both local and cloud modes."""
     def __init__(self, mode="local", local_weights_path=None,
