@@ -58,6 +58,9 @@ def run(cfg):
                                    cfg["model"]["batch_size"])
         log(f"  Shape: {emb_test.shape} ({time.time() - t:.1f}s)", log_file)
 
+        del X_test
+        gc.collect()
+
         results = {}
         for i, n in enumerate(shots, 1):
             log(f"\n{'='*40}", log_file)
