@@ -259,6 +259,88 @@ def filter_top_classes(X: np.ndarray, y: np.ndarray, n: int = 15):
     return X_filtered, y_mapped
 
 
+def load_features_chunked(preprocess_dir: str, split_dir: str, use_case: str,
+                          feature_fn, split_name: str = "all",
+                          chunk_size: int = 5000, use_zenodo: bool = False):
+    """
+    Load data and extract features in chunks to avoid RAM exhaustion.
+
+    Instead of loading all time series into memory, processes files in batches:
+    load chunk → extract features → delete raw → accumulate compact features.
+
+    Args:
+        feature_fn: callable, takes (T, C) array → (F,) feature vector
+        chunk_size: number of files to process per batch
+
+    Returns:
+        (X_train_feat, y_train, X_test_feat, y_test, label_names)
+    """
+    import gc
+
+    if split_name == "all":
+        split_file = os.path.join(split_dir, use_case, "finetune",
+                                  "region_split_all.json")
+    else:
+        split_file = os.path.join(split_dir, use_case, "finetune",
+                                  f"region_split_{split_name}.json")
+
+    with open(split_file) as f:
+        split_data = json.load(f)
+
+    results = {}
+    for split_key in ["train", "test"]:
+        filenames = split_data[split_key]
+
+        items = []
+        for fn in filenames:
+            fp = os.path.join(preprocess_dir, fn)
+            if os.path.exists(fp):
+                class_label = fn.split("_")[-1].replace(".npz", "")
+                items.append((fp, class_label))
+
+        n = len(items)
+        print(f"  {split_key}: {n} samples, processing in chunks of {chunk_size}")
+
+        feat_list = []
+        y_list = []
+
+        for start in range(0, n, chunk_size):
+            chunk = items[start:start + chunk_size]
+            chunk_feats = []
+            chunk_y = []
+            for fp, label in chunk:
+                try:
+                    npz = np.load(fp, allow_pickle=True)
+                    data = npz["data"]
+                    feat = feature_fn(data)
+                    chunk_feats.append(feat)
+                    chunk_y.append(label)
+                except Exception:
+                    pass
+            feat_list.extend(chunk_feats)
+            y_list.extend(chunk_y)
+            del chunk_feats, chunk_y
+            gc.collect()
+
+        if not feat_list:
+            results[split_key] = (np.array([]), np.array([]), [])
+            continue
+
+        unique_labels = sorted(set(y_list))
+        label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
+        y_mapped = np.array([label_map[yl] for yl in y_list], dtype=np.int64)
+        X_feat = np.array(feat_list, dtype=np.float32)
+
+        del feat_list, y_list
+        gc.collect()
+
+        results[split_key] = (X_feat, y_mapped, unique_labels)
+
+    label_names = results["train"][2] if "train" in results else []
+    return (results["train"][0], results["train"][1],
+            results["test"][0], results["test"][1], label_names)
+
+
 def train_test_split_stratified(X: np.ndarray, y: np.ndarray,
                                  test_size: float = 0.2, seed: int = 42):
     """Stratified train/test split."""

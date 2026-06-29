@@ -10,8 +10,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.utils.runner import load_config, setup_logging, log, log_header, log_footer, load_data
-from src.data.features import ndvi_features, band_stat_features
+from src.utils.runner import load_config, setup_logging, log, log_header, log_footer
+from src.data.loader import load_features_chunked
+from src.data.features import ndvi_single, band_stat_single
 from src.models.classical import get_classifier
 from src.evaluate.metrics import compute_metrics, save_metrics, save_confusion_matrix
 
@@ -22,24 +23,27 @@ def run(cfg):
     log_header("PHASE 1: Classical Baselines (RF / LightGBM / XGBoost)", log_file)
     start_time = time.time()
 
-    X_train, y_train, X_test, y_test = load_data(cfg, log_file)
+    preprocess_dir = cfg["data"]["local_preprocess_dir"]
+    split_dir = cfg["data"]["local_split_dir"]
+    use_case = cfg["data"]["use_case"]
+    use_zenodo = cfg["data"].get("use_zenodo", False)
 
-    log(f"  Feature dim: {X_train[0].shape if hasattr(X_train[0], 'shape') else 'N/A'}", log_file)
-
-    experiments = {
-        "ndvi_rf": (ndvi_features, "rf"),
-        "bandstat_rf": (band_stat_features, "rf"),
-        "bandstat_lgbm": (band_stat_features, "lgbm"),
-        "bandstat_xgb": (band_stat_features, "xgb"),
-    }
+    experiments = [
+        ("ndvi_rf", ndvi_single, "rf"),
+        ("bandstat_rf", band_stat_single, "rf"),
+        ("bandstat_lgbm", band_stat_single, "lgbm"),
+        ("bandstat_xgb", band_stat_single, "xgb"),
+    ]
 
     results = {}
-    for i, (name, (feat_fn, clf_name)) in enumerate(experiments.items(), 1):
+    for i, (name, feat_fn, clf_name) in enumerate(experiments, 1):
         log(f"\n[{i}/{len(experiments)}] {name}", log_file)
         exp_start = time.time()
 
-        X_tr = feat_fn(X_train)
-        X_te = feat_fn(X_test)
+        X_tr, y_train, X_te, y_test, labels = load_features_chunked(
+            preprocess_dir, split_dir, use_case, feat_fn,
+            use_zenodo=use_zenodo, chunk_size=5000
+        )
         log(f"  Features: train={X_tr.shape}, test={X_te.shape}", log_file)
 
         clf = get_classifier(clf_name, cfg["data"]["random_seed"])
@@ -49,7 +53,6 @@ def run(cfg):
         del X_tr, X_te, clf
         gc.collect()
 
-        labels = sorted(set(y_test))
         m = compute_metrics(y_test, y_pred, labels=labels)
         save_metrics(m, f"results/metrics/phase1_{name}.json")
         save_confusion_matrix(y_test, y_pred, f"results/metrics/phase1_{name}_cm.csv", labels=labels)

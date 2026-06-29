@@ -12,6 +12,14 @@ B4_IDX = S2_BANDS.index("B04")
 B8_IDX = S2_BANDS.index("B08")
 
 
+def ndvi_single(x: np.ndarray) -> np.ndarray:
+    """x: (T, C) → (4,) — [mean, max, min, std] of NDVI time series"""
+    red = x[:, B4_IDX].astype(np.float32)
+    nir = x[:, B8_IDX].astype(np.float32)
+    ndvi = (nir - red) / (nir + red + 1e-8)
+    return np.array([ndvi.mean(), ndvi.max(), ndvi.min(), ndvi.std()], dtype=np.float32)
+
+
 def ndvi_features(X: np.ndarray) -> np.ndarray:
     """
     X: (N, T, C)
@@ -26,6 +34,16 @@ def ndvi_features(X: np.ndarray) -> np.ndarray:
         ndvi.min(axis=1),
         ndvi.std(axis=1),
     ], axis=1).astype(np.float32)
+
+
+def band_stat_single(x: np.ndarray) -> np.ndarray:
+    """x: (T, C) → (C*3,) — mean, std, max per band across time"""
+    x32 = x.astype(np.float32)
+    return np.concatenate([
+        x32.mean(axis=0),
+        x32.std(axis=0),
+        x32.max(axis=0),
+    ]).astype(np.float32)
 
 
 def band_stat_features(X: np.ndarray) -> np.ndarray:
