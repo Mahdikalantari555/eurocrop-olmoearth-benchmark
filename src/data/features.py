@@ -183,7 +183,7 @@ def combined_baseline_features(X: np.ndarray) -> np.ndarray:
 
 def stream_and_save_features(data_dir, split_dir, use_case, split_key,
                              output_path, top_n_classes=None,
-                             batch_size=256, n_workers=4):
+                             batch_size=256, n_workers=8):
     """
     Stream data from disk, extract features per batch, save incrementally.
     Never loads full (N, T, C) into memory.
