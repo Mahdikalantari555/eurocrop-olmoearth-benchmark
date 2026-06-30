@@ -73,6 +73,18 @@ class TestOlmoEarthEncoder:
         assert loaded.dim == 128
         assert len(loaded.blocks) == 4
 
+    def test_from_state_dict_non_default_size(self, tmp_path):
+        model = OlmoEarthEncoder(dim=384, n_blocks=6)
+        fake_state = {}
+        for k, v in model.state_dict().items():
+            fake_state[f"encoder.{k}"] = v
+        weights_path = str(tmp_path / "test_weights_384.pth")
+        torch.save(fake_state, weights_path)
+
+        loaded = OlmoEarthEncoder.from_state_dict(weights_path)
+        assert loaded.dim == 384
+        assert len(loaded.blocks) == 6
+
     def test_from_state_dict_cpu(self, tmp_path):
         model = OlmoEarthEncoder(dim=128, n_blocks=2)
         fake_state = {f"encoder.{k}": v for k, v in model.state_dict().items()}

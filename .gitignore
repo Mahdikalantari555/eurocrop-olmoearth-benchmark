@@ -1,5 +1,6 @@
 archive/
 __pycache__/
 *.pyc
-
+results/
+report/
 todo

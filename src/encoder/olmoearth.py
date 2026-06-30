@@ -55,6 +55,34 @@ class TransformerBlock(nn.Module):
         return x
 
 
+def _infer_config_from_state_dict(state_dict):
+    """Infer dim, n_blocks, and modality_configs from checkpoint keys."""
+    import re
+
+    dim = None
+    n_blocks = 0
+    modality_configs = {}
+
+    for k, v in state_dict.items():
+        if k.startswith("encoder."):
+            k = k[len("encoder."):]
+        if re.match(r"blocks\.\d+\.norm1\.weight$", k):
+            n_blocks += 1
+            dim = v.shape[0]
+        if re.match(r"patch_embeddings\.(.+)\.pixel_proj\.weight$", k):
+            name = re.match(r"patch_embeddings\.(.+)\.pixel_proj\.weight$", k).group(1)
+            in_ch = v.shape[1]
+            modality_configs[name] = in_ch
+
+    if dim is None:
+        raise ValueError("Cannot infer model dim from state_dict — no blocks.*.norm1.weight found")
+
+    if n_blocks == 0:
+        n_blocks = 4
+
+    return dim, n_blocks, modality_configs or None
+
+
 class OlmoEarthEncoder(nn.Module):
     """
     Minimal OLMoEarth encoder built from state_dict keys.
@@ -115,7 +143,9 @@ class OlmoEarthEncoder(nn.Module):
         enc_keys = {k: v for k, v in state_dict.items()
                     if k.startswith("encoder.")}
 
-        model = OlmoEarthEncoder()
+        dim, n_blocks, modality_configs = _infer_config_from_state_dict(state_dict)
+        model = OlmoEarthEncoder(dim=dim, n_blocks=n_blocks,
+                                 modality_configs=modality_configs)
 
         mapped = {}
         for k, v in enc_keys.items():
